@@ -21,6 +21,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt install -y pandoc
+        sudo apt install -y libxml2-dev libcurl4-openssl-dev libssl-dev
         Rscript -e 'install.packages(c("ggplot2", "knitr", "tidyr", "dplyr", "DT", "scales", "plotly", "maps", "UpSetR", "ggalluvial", "stringr", "grid", "rmarkdown"), repos="https://cloud.r-project.org/")'
 
     - name: Render RMarkdown
