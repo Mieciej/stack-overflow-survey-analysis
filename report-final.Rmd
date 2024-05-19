@@ -1,0 +1,561 @@
+---
+title: |
+  ![](data/PP_logotyp_ANG_RGB.jpg)
+  <h1> Stack Overflow Developer Survey Report </h1>
+author: "Jakub Kubiak, Maciej Janicki"
+date: "`r Sys.Date()`"
+output: 
+  html_document: 
+    toc: true
+    toc_float: true
+---
+
+
+
+```{css, echo=FALSE}
+p {
+  color: #808080;
+}
+
+h1 {
+  text-align: center;
+  font-weight: bold;
+}
+
+.author, .date {
+  text-align: center;
+}
+
+img {
+  margin-top: 10px;
+}
+```
+
+
+---
+
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(knitr)
+library(tidyr)
+library(dplyr)
+knitr::opts_chunk$set(echo = FALSE)
+opts_chunk$set(error = FALSE)
+opts_chunk$set(message = FALSE)
+opts_chunk$set(warning = FALSE)
+library(DT)
+library(scales)
+library(plotly)
+prettyTable <- function(table_df, round_columns_func=is.numeric, round_digits=2) {
+    DT::datatable(table_df, style="bootstrap", filter = "top", rownames = FALSE, extensions = "Buttons", options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print'))) %>%
+    formatRound(unlist(lapply(table_df, round_columns_func)), round_digits)
+}
+library(maps)
+library(UpSetR)
+library(ggalluvial)
+library(stringr)
+library(grid)
+```
+
+```{r cache=TRUE}
+results_2018 = read.csv('data/survey_results_2018.csv',header = TRUE)
+results_2023 = read.csv('data/survey_results_2023.csv',header = TRUE)
+schema_2018 = read.csv('data/survey_results_schema_2018.csv',header = TRUE)
+schema_2023 = read.csv('data/survey_results_schema_2023.csv',header = TRUE)
+```
+
+```{r}
+number_of_respondents_2018 = nrow(distinct(results_2018,Respondent))
+number_of_respondents_2023 = nrow(distinct(results_2023,ResponseId))
+```
+
+
+# 1. The data
+
+Data used for the report was gather by Stack Overflow and contains information about its users.
+
+## The 2018 survey questions
+
+In 2018 **`r format(number_of_respondents_2018,big.mark=',')`** users were asked these questions:
+
+```{r}
+questions_2018 <- select(schema_2018,-Column) %>% slice(2:nrow(schema_2018))
+prettyTable(questions_2018)
+```
+
+## The 2023 survey questions
+
+In 2023 **`r format(number_of_respondents_2023,big.mark=',')`** users were asked these questions:
+
+```{r}
+questions_2023 <- select(schema_2023,question) %>% slice(6:nrow(schema_2023)) 
+questions_2023$question <- gsub("<[^>]*>","",questions_2023$question)
+prettyTable(questions_2023)
+```
+
+```{r}
+
+colors = c("#ffd700",
+           "#ffb14e",
+           "#fa8775",
+           "#ea5f94",
+           "#cd34b5",
+           "#9d02d7")
+```
+
+---
+
+# 2. Analysis
+
+```{r}
+os_2018 <- results_2018 %>%
+  select(OperatingSystem) %>%
+  filter(!is.na(OperatingSystem)) %>%
+  mutate(OS = OperatingSystem) %>%
+  mutate(Year = '2018') %>%
+  select(OS, Year)
+linux = c("Ubuntu","Red Hat","Other Linux-based","Fedora","Debian","Arch")
+windows = c("Windows Subsystem for Linux (WSL)","Windows","Cygwin")
+macos = c("MacOS","iPadOS","iOS")
+unix = c("Solaris","BSD","AIX")
+all_oses = c(linux,windows,macos,unix)
+os_2023 <- results_2023 %>%
+  select(OpSysProfessional.use) %>%
+  filter(!is.na(OpSysProfessional.use)) %>%
+  filter(OpSysProfessional.use !='') %>%
+  separate_longer_delim(OpSysProfessional.use,";") %>%
+  mutate(OS = OpSysProfessional.use ) %>%
+  mutate(OS=ifelse(OS %in% all_oses, OS, "other")) %>%
+  filter(OS !='other') %>%
+  mutate(OS=ifelse(OS %in% linux,"Linux-based", OS )) %>%
+  mutate(OS=ifelse(OS %in% windows,"Windows", OS )) %>%
+  mutate(OS=ifelse(OS %in% macos,"MacOS", OS )) %>%
+  mutate(OS=ifelse(OS %in% unix,"BSD/Unix", OS )) %>%
+  mutate(Year = '2023') %>%
+  select(OS,Year)
+
+os_all = union_all(os_2018,os_2023) %>%filter(OS!="BSD/Unix")
+```
+
+## 2.1 Operating Systems
+
+Both surveys asked users, what operating system do they use at work. As we can see the results clearly show that developers are more diverse group than typical consumers. In 2018 and 2023 most popular OS was [Microsoft® Windows™](https://en.wikipedia.org/wiki/Microsoft_Windows). The domination of team blue is slowly diminishing with Linux-based distributions rising in popularity between two surveys. Who knows, maybe 2024 will really be [The Year of the Linux Desktop.](https://yotld.com/)
+
+```{r}
+ggplot(os_all,aes(x=OS))+
+  geom_bar(aes(fill=factor(after_stat(x)),y=after_stat(prop),group = 1)) +
+  scale_y_continuous(labels=percent,breaks = seq(0,0.5,length.out=3)) +
+  scale_fill_manual(values=colors)+
+  facet_grid(~Year) +
+  ggtitle("Operating Systems Used Professionally") +
+  ylab("") +
+  xlab("") +
+  guides(fill="none") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "right",
+        legend.justification = "left",
+        axis.title = element_text(size = 20, face = "bold"),
+        plot.title = element_text(size = 20, face = "bold"),
+        text = element_text(size = 20))
+```
+
+## 2.2 Programming Languages
+
+There is no tool more commonly used by programmers than programming languages. Over the years many beginner programmers have been asking this question "What programming language should I learn?". While there are many answers to this question we will evaluate it based on the most important metric - money.
+
+```{r}
+n_top =4
+money_lang_2018 = results_2018 %>% 
+  separate_longer_delim(LanguageWorkedWith,";") %>%
+  filter(!is.na(LanguageWorkedWith)) %>% 
+  filter(!is.na(ConvertedSalary)) %>%
+  group_by(LanguageWorkedWith) %>%
+  mutate(avg_salary = mean(ConvertedSalary)) %>%
+  ungroup(LanguageWorkedWith) %>%
+  mutate(Year = '2018') %>%
+  count(LanguageWorkedWith,avg_salary, Year) %>%
+  filter(n>500) %>%
+  mutate(baseline = mean(avg_salary)) 
+
+best_lang_money_2018 = money_lang_2018 %>% top_n(n_top,avg_salary) %>% mutate(cat="Best")
+worst_lang_money_2018 = money_lang_2018 %>% top_n(-n_top,avg_salary) %>% mutate(cat="Worst")
+
+money_lang_2023 = results_2023 %>% 
+  mutate(LanguageWorkedWith = LanguageHaveWorkedWith)%>%
+  mutate(ConvertedSalary = ConvertedCompYearly) %>%
+  separate_longer_delim(LanguageWorkedWith,";") %>%
+  filter(!is.na(LanguageWorkedWith)) %>% 
+  filter(!is.na(ConvertedSalary)) %>%
+  group_by(LanguageWorkedWith) %>%
+  mutate(avg_salary = mean(ConvertedSalary)) %>%
+  ungroup(LanguageWorkedWith) %>%
+  mutate(Year = '2023') %>%
+  count(LanguageWorkedWith,avg_salary,Year) %>%
+  filter(n>500) %>%
+  mutate(baseline = mean(avg_salary)) 
+best_lang_money_2023 = money_lang_2023 %>% top_n(n_top,avg_salary) %>% mutate(cat="Best")
+worst_lang_money_2023 = money_lang_2023 %>% top_n(-n_top,avg_salary) %>% mutate(cat="Worst")
+
+money_lang_all = union_all(best_lang_money_2018,best_lang_money_2023)
+money_lang_all = union_all(money_lang_all,worst_lang_money_2018)
+money_lang_all = union_all(money_lang_all,worst_lang_money_2023)
+money_lang_all = money_lang_all %>% mutate(rank = dense_rank(desc(avg_salary)) )
+
+```
+
+## 2.3 Salary
+
+Below you can see plot of average salary given a programming language. We had exclude some niche and archaic languages such as `Cobol` or `Fortran`, because their developers (however few) earn a lot of money (they were also not included in 2018 survey).
+
+```{r}
+salary_color = c(colors[1],colors[6])
+ggplot(money_lang_all,aes(x=reorder(LanguageWorkedWith,rank),y=avg_salary)) +
+  geom_bar(stat = 'identity',aes(fill=cat)) +
+  facet_grid(~Year,scales = "free_x") +
+  geom_hline(aes(yintercept = baseline),linetype="dashed") + 
+  ggtitle("Best and Worst Programming Languages") +
+  labs(subtitle = "Based on Salary") +
+  ylab("Yearly Salary [USD]") +
+  xlab("")+
+  scale_fill_manual(values = salary_color)+
+  guides(fill="none") +
+  scale_y_continuous(name = "Average Salary", label = scales::comma, breaks = seq(0,400000,length.out = 3)) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "right",
+        legend.justification = "left",
+        axis.title = element_text(size = 20, face = "bold"),
+        plot.title = element_text(size = 20, face = "bold"),
+        text = element_text(size = 20))
+```
+
+Looking how salaries of the developers have changed over the years it is easy to see that functional languages are currently best paid. Web developers however are getting less paid on average. Let's assume that beginner should learn [.NET's](https://en.wikipedia.org/wiki/.NET) own `F#`.
+
+```{r}
+satif_lang_2018 = results_2018 %>% 
+  separate_longer_delim(LanguageWorkedWith,";") %>%
+  select(LanguageWorkedWith,JobSatisfaction) %>%
+  filter(!is.na(LanguageWorkedWith)) %>%
+  filter(!is.na(JobSatisfaction)) %>% 
+  mutate( score = case_match(JobSatisfaction,"Extremely dissatisfied"~0,
+                             "Moderately dissatisfied"~1,
+                             "Slightly dissatisfied"~2,
+                "Neither satisfied nor dissatisfied"~3,
+                "Slightly satisfied"~4, 
+                "Moderately satisfied"~5,
+                "Extremely satisfied"~6,
+                .default = NA
+                             )) %>%
+  group_by(LanguageWorkedWith) %>%
+  mutate(avg_satisfaction = mean(score)) %>%
+  select(LanguageWorkedWith,avg_satisfaction) %>%
+  distinct() %>%
+  ungroup(LanguageWorkedWith)
+n_top = 6 
+best_satif_lang = satif_lang_2018 %>% top_n(n_top) %>% mutate(cat='best')
+worst_satif_lang = satif_lang_2018 %>% top_n(-n_top) %>% mutate(cat='worst')
+top_satif_langs = union_all(best_satif_lang,worst_satif_lang)
+```
+
+## 2.4 Satisfaction
+
+Now that we have decided to learn `F#` we need to check if we will be happy learning and using it. Fortunately in 2018 developers reported their satisfaction levels and we now see how what languages make you the most satisfied. To plot our results we mapped satisfaction level on scale from 0 to 6, with 6 being extremely satisfied. Notice also that the plot is zoomed in on y-axis to exaggerate satisfaction difference because it appears that programming is rather satisfying undertaking.
+
+```{r}
+scaleFUN <- function(x) sprintf("%.2f", x)
+ggplot(top_satif_langs,aes(x=reorder(LanguageWorkedWith,avg_satisfaction),y=avg_satisfaction)) +
+  geom_bar(stat = 'identity',aes(fill=cat)) +
+  scale_fill_manual(values = salary_color)+
+  guides(fill="none") +
+  scale_y_continuous(breaks= seq(3.2,4.25,length.out=3), labels=scaleFUN) +
+  coord_cartesian(ylim=c(3.2,4.25)) +
+  ggtitle("Average Job Satisfaction")+
+  labs(subtitle = "Best and Worst Programming Languages") +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "right",
+        legend.justification = "left",
+        axis.title = element_text(size = 20, face = "bold"),
+        plot.title = element_text(size = 20, face = "bold"),
+        text = element_text(size = 20))
+```
+
+Now we can see that our choice of `F#` will leave us wealthy and satisfied.
+
+## 2.5 Tech Stacks
+
+Let's now evaluate what are most common programming language combinations currently on the market.
+
+```{r fig.width=14, fig.height=10}
+interpolated_colors = rev(c(
+  "#ffd700", "#ffcc42", "#ff9b54", "#fa8775", 
+  "#f87389", "#df4da0", "#cd34b5", "#b726c9"))
+languages_2023 = results_2023$LanguageHaveWorkedWith
+most_popular_languages_2023 = c("JavaScript", "HTML/CSS", "Python", "SQL", "TypeScript", "Bash/Shell (all shells)", "Java", "C#", "C++", "C")
+
+languages_2023 = lapply(languages_2023, function(x) unlist(strsplit(x, ";")))
+filter_language_list <- function(languages, popular_languages) {
+  return (languages[languages %in% popular_languages])
+}
+
+languages_2023 = lapply(languages_2023, function(x) filter_language_list(x, most_popular_languages_2023))
+indices = lapply(most_popular_languages_2023, function(x) which(sapply(languages_2023, function(y) x %in% y)))
+
+listInput <- list(JavaScript = indices[[1]], `HTML/CSS` = indices[[2]], Python = indices[[3]], SQL = indices[[4]], TypeScript = indices[[5]], `Bash/Shell (all shells)` = indices[[6]], Java = indices[[7]], `C#` = indices[[8]], `C++` = indices[[9]], C = indices[[10]])
+
+
+upset(fromList(listInput), 
+      sets = most_popular_languages_2023[0:8], 
+      order.by = "freq",
+      sets.bar.color = interpolated_colors,
+      queries = list(list(query = intersects, params = list("JavaScript"), color = "#b726c9", active = TRUE),
+                     list(query = intersects, params = list("Python"), color = "#df4da0", active = TRUE),
+                     list(query = intersects, params = list("SQL"), color = "#f87389", active = TRUE),
+                     list(query = intersects, params = list("Bash/Shell (all shells)"), color = "#ff9b54", active = TRUE),
+                     list(query = intersects, params = list("Java"), color = "#ffcc42", active = TRUE),
+                     list(query = intersects, params = list("C#"), color = "#ffd700", active = TRUE)),
+      text.scale = c(2.75, 2.5, 2.5, 2.5, 2.5, 2.5),
+      matrix.color = "gray23", main.bar.color = "gray23",
+      shade.color = "gray70", shade.alpha = 0.25, matrix.dot.alpha = 0.5,
+      point.size = 4,
+      show.numbers = "no",)
+grid.text("Programming Language Popularity",x = 0.70, y=0.95, gp=gpar(fontsize=25, fontface="bold"))
+```
+
+As web development continues to dominate the market, the trio of JavaScript, HTML, and CSS is becoming increasingly popular. Alongside, TypeScript is steadily gaining traction, with growing interest year by year. Additionally, there's a substantial cohort of programmers who exclusively work with Python. We can easily see that `F#` is not popular so we can hope that there will low competition on the job market.
+
+## 2.6 Employment
+
+One of the biggest changes that the pandemic has brought to programming job market is shift to remote or hybrid work. It is very attractive offering and we want to see what type of employment is mostly remote.
+
+```{r fig.height=6.95,fig.width=8}
+employment_2023 = results_2023$Employment
+work_2023 = results_2023$RemoteWork
+
+data = data.frame(employment_2023, work_2023) %>%
+  filter(!is.na(employment_2023) & !is.na(work_2023) & employment_2023 != "Not employed, but looking for work") %>%
+  rename("employment" = employment_2023, "work" = work_2023)
+
+data = data %>%
+  mutate(employment = strsplit(employment, ";")) %>%
+  unnest(cols = c(employment)) %>%
+  filter(employment != "Not employed, and not looking for work" & 
+           employment != "Retired" & 
+           employment != "Not employed, but looking for work" & 
+           employment != "Student, part-time" &
+           employment != "Student, full-time") %>%
+  group_by(employment, work) %>%
+  summarise(Freq = n())
+
+data$employment <- str_replace_all(data$employment, ", ", ",\n")
+data$work <- str_replace_all(data$work, ", ", ",\n")
+
+ggplot(data, aes(axis1 = employment, axis2 = work, y=Freq)) +
+  geom_alluvium(aes(fill = work)) +
+  geom_stratum() +
+  geom_text(stat = "stratum", aes(label = after_stat(stratum))) +
+  theme_classic() +
+  scale_fill_manual(values = c("#ffd700", "#ea5f94", "#9d02d7")) +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.line.y = element_blank(),
+        axis.line.x = element_blank(),
+        axis.ticks.x = element_blank(), 
+        axis.ticks.y = element_blank(), 
+        legend.position = "right",
+        legend.justification = "left",
+        axis.title = element_text(size = 20, face = "bold"),
+        plot.title = element_text(size = 20, face = "bold"),
+        text = element_text(size = 20),
+        strip.text = element_text(size = 20),
+        legend.key.width = unit(1, "cm"),  # Increase legend key width
+        legend.key.height = unit(1, "cm"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank()) +
+  labs(title = "Employment Status and Remote Work",
+       fill = "Work Type",
+       y = "")  +
+  guides(fill="none")
+```
+
+Most of programming is currently at least partially done remotely. Coming in-person to work is song of the past. Also freelancers are most likely to work remotely.
+
+## 2.7 Experience of StackOverflow users
+
+When looking up answers on StackOverflow one can ask themselves a question "Are those code snippets written by professionals?". Hopefully the surveys can answer that.
+
+```{r}
+
+# FIRST PLOT - COMPARISON OF STACK PARTICIPATION BY YEARS OF PROFESSIONAL CODING
+
+prepare_2018_first <- function() {
+  intervals = c("0-2 years", "3-5 years", "6-8 years", "9-11 years", "12-14 years", "15-17 years", "18-20 years", "21-23 years", "24-26 years", "27-29 years", "30 or more years")
+  years_coding_2018 = results_2018$YearsCodingProf
+  stack_participation_2018 = results_2018$StackOverflowParticipate
+  data_2018 <- data.frame(years_coding_2018, stack_participation_2018) %>%
+    filter(!is.na(years_coding_2018) & !is.na(stack_participation_2018)) %>%
+    rename("years" = years_coding_2018, "stack" = stack_participation_2018)
+  
+  counts <- data_2018 %>%
+    group_by(years) %>%
+    summarise(count = n())
+  
+  frequencies <- data_2018 %>%
+    group_by(years, stack) %>%
+    summarise(count = n()) %>%
+    left_join(counts, by = "years") %>%
+    mutate(count = count.x / count.y) %>%
+    select(-count.x, -count.y)
+  
+  frequencies$years = factor(frequencies$years, levels = intervals)
+  frequencies$year = rep(2018, nrow(frequencies))
+  return (frequencies)
+}
+```
+
+```{r}
+prepare_2023_first <- function() {
+  interval_names = c("0-2 years", "3-5 years", "6-8 years", "9-11 years", "12-14 years", "15-17 years", "18-20 years", "21-23 years", "24-26 years", "27-29 years", "30 or more years")
+  years_coding_2023 = results_2023$YearsCodePro
+  stack_participation_2023 = results_2023$SOPartFreq
+  data <- data.frame(years_coding_2023, stack_participation_2023) %>%
+    filter(!is.na(years_coding_2023) & !is.na(stack_participation_2023)) %>%
+    rename("years" = years_coding_2023, "stack" = stack_participation_2023)
+  
+  
+  data$years[data$years == "Less than 1 year"] <- 0
+  data$years[data$years == "More than 50 years"] <- 30
+  
+  data$years = as.numeric(data$years)
+  data$years[data$years > 30] <- 30
+  
+  intervals <- list(c(0, 2), c(3, 5), c(6, 8), c(9, 11), c(12, 14), c(15, 17), c(18, 20), c(21, 23), c(24, 26), c(27, 29), c(30, Inf))
+  
+  named_years = rep(NA, length(data$years))
+  
+  for (i in 1:length(intervals)) {
+    lower_bound <- intervals[[i]][1]
+    upper_bound <- intervals[[i]][2]
+    selected_indices <- which((data$years >= lower_bound) & (data$years <= upper_bound))
+    named_years[selected_indices] <- interval_names[i]  # Assign values directly to subset
+  }
+  data$years = named_years
+  
+  counts = data %>%
+    group_by(years) %>%
+    summarise(count = n())
+  
+  frequencies = data %>%
+    group_by(years, stack) %>%
+    summarise(count = n()) %>%
+    left_join(counts, by = "years") %>%
+    mutate(count = count.x / count.y) %>%
+    select(-count.x, -count.y)
+  
+  frequencies$years = factor(frequencies$years, levels = interval_names)
+  frequencies$year = rep(2023, nrow(frequencies))
+  return (frequencies)
+}
+combine_observations_first <- function(isline = FALSE) {
+  result_2018 = prepare_2018_first()
+  result_2023 = prepare_2023_first()
+  
+  combined_data = rbind(result_2018, result_2023)
+  
+  combined_data$year = factor(combined_data$year, levels = c(2018, 2023))
+  combined_data$count = combined_data$count 
+  
+  interval_names = c("0-2 years", "3-5 years", "6-8 years", "9-11 years", "12-14 years", "15-17 years", "18-20 years", "21-23 years", "24-26 years", "27-29 years", "30 or more years")
+  interval_names_proper = c("0-2", "3-5", "6-8", "9-11", "12-14", "15-17", "18-20", "21-23", "24-26", "27-29", "30+")
+  combined_data$years = factor(combined_data$years, levels = interval_names, labels = interval_names_proper)
+  
+  stack_order <- c("Multiple times per day",
+                   "Daily or almost daily",
+                   "A few times per week",
+                   "A few times per month or weekly",
+                   "Less than once per month or monthly",
+                   "I have never participated in Q&A on Stack Overflow")
+  
+  # Convert stack variable to factor with predefined order
+  combined_data$stack <- factor(combined_data$stack, levels = rev(stack_order))
+  
+  if (isline) {
+    combined_data <- combined_data %>%
+      group_by(year, stack, years) %>%
+      summarise(count = sum(count))
+    return (combined_data)
+  }
+  return (combined_data)
+}
+```
+
+```{r fig.width=14, fig.height=8}
+combined_data = combine_observations_first(TRUE)
+ggplot(combined_data, aes(x = years, y = count, color = factor(stack), group = interaction(year, stack))) +
+  geom_line(aes(linetype=factor(year)),linewidth = 1) +
+  geom_point(size = 1) +
+  facet_wrap(stack ~ ., scales = "free_x") +
+  scale_color_manual(name = "Participation", values = colors) +  # Change the name of the color legend
+  scale_linetype_manual(name = "Year", values = c("solid", "dashed")) +  # Change the name of the linetype legend
+  theme_classic() +
+  labs(x = "Years Coding Professionally",
+       y = "Percentage of Respondents",
+       title = "Stack Overflow Participation by Years Coding Professionally") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "right",
+        legend.justification = "left",
+        axis.title = element_text(size = 20, face = "bold"),
+        plot.title = element_text(size = 20, face = "bold"),
+        text = element_text(size = 20),
+        strip.text = element_text(size = 12),
+        legend.key.width = unit(1, "cm"),  # Increase legend key width
+        legend.key.height = unit(1, "cm"),
+        panel.grid.major.y = element_line(color = "gray", size = 0.25),
+        panel.grid.minor.y = element_line(color = "gray", size = 0.25),) +
+  guides(color = "none") +
+  scale_y_continuous(labels=percent,breaks = seq(0,0.6,length.out=3))
+```
+
+```{r fig.width=14, fig.height=6}
+combined_data = combine_observations_first(FALSE)
+ggplot(combined_data, aes(x = years, 
+                              y = count, 
+                              fill = stack, 
+                              text = paste("Frequency: ", format(count * 100, digits = 2), "%",
+                                           "\nYears of programming: ", years,
+                                           "\nStack Overflow usage: ", stack))) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_wrap(~year) +
+  labs(x = "Years Coding Professionally",
+       y = "Proportion of Respondents",
+       title = "Stack Overflow Participation by Years Coding Professionally") +
+  theme_classic() +
+  scale_fill_manual(values = colors, name = "Participcation") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.text.y  = element_blank(),
+        legend.position = "right",
+        legend.justification = "left",
+        axis.title = element_text(size = 20, face = "bold"),
+        plot.title = element_text(size = 20, face = "bold", margin = margin()),
+        text = element_text(size = 20),
+        axis.title.x = element_text(margin = margin(t = 20, r = 0, b = 0, l = 0)),
+        axis.title.y = element_text(margin = margin(t = 0, r = 20, b =0, l = 20)),
+        strip.text = element_text(size = 20),
+        legend.key.width = unit(1, "cm"),  # Increase legend key width
+        legend.key.height = unit(1, "cm"),)
+ ################################################################################
+```
+
+Looking at the data we can clearly see that most StackOverflow users answer questions sporadically. Also most users who answer questions have at least some experience, but still number of users who answer question with no experience is staggering. Comparing 2018 survey with 2023 survey we can see that the proportion of [lurkers](https://en.wikipedia.org/wiki/Lurker) on the platform increased.
+
+Taking a closer look at the graphs reveals a decline in regular participation in discussions on Stack Overflow. This trend could be attributed to the easily accessible Large Language Models in recent years. These models are sometimes great at providing accurate, context specific answers to questions, potentially dissuading some users from actively engaging in such discussions in public.
+
+---
+
+# 3. Conclusions
+
+To conclude we can see that developers changed quite a bit over the 5 years. Data also suggests that StackOverflow grew as a platform. We have also decided that the best programming language for beginners is `F#`.
